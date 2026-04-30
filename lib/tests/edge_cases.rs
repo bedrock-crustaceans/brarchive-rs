@@ -79,11 +79,8 @@ fn deserialize_bad_magic_returns_error() {
 #[test]
 fn deserialize_bad_version_returns_error() {
     let mut bytes = brarchive::serialize([("k", "v")]).unwrap();
-    // Version is at bytes 12-15 (u32 LE). Set it to 999.
-    bytes[12] = 0xE7;
-    bytes[13] = 0x03;
-    bytes[14] = 0x00;
-    bytes[15] = 0x00;
+    // Version is at bytes 12-15 (u32 LE). Set it to an unsupported value.
+    bytes[12..16].copy_from_slice(&999u32.to_le_bytes());
     let result: Result<BTreeMap<String, String>, _> = brarchive::deserialize(&bytes);
     assert!(matches!(result, Err(brarchive::error::BrArchiveError::UnsupportedVersion(999))));
 }
