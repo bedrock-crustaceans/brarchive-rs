@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Instant;
 use clap::Parser;
-use log::{error, info};
+use log::{error, info, warn};
 use crate::args::{CliArgs, CliSubcommand};
 use crate::logger::setup_logger;
 
@@ -133,7 +133,10 @@ fn encode_recursive(source_root: &Path, current: &Path, archive_root: &Path, ded
         } else if p.is_file() {
             let content = match fs::read_to_string(&p) {
                 Ok(c) => c,
-                Err(_) => continue, // skip non-UTF-8 files silently
+                Err(err) => {
+                    warn!("Skipping non-UTF-8 file \"{}\": {}", p.display(), err);
+                    continue;
+                }
             };
             let name = p.file_name().and_then(OsStr::to_str).unwrap().to_string();
             files.insert(name, content);
@@ -142,7 +145,16 @@ fn encode_recursive(source_root: &Path, current: &Path, archive_root: &Path, ded
 
     if !files.is_empty() {
         let relative = current.strip_prefix(source_root).unwrap_or(Path::new(""));
-        let archive_path = add_extension_if_missing(archive_root.join(relative), "brarchive");
+        let archive_path = if relative == Path::new("") {
+            // Root-level files: name archive after the source directory itself
+            let stem = source_root
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("root");
+            archive_root.join(stem).with_extension("brarchive")
+        } else {
+            add_extension_if_missing(archive_root.join(relative), "brarchive")
+        };
 
         if let Some(parent) = archive_path.parent() {
             fs::create_dir_all(parent).unwrap_or_else(|err| {
@@ -151,7 +163,7 @@ fn encode_recursive(source_root: &Path, current: &Path, archive_root: &Path, ded
             });
         }
 
-        let archive = brarchive::serialize_with(files.clone(), SerializeOptions { dedup })
+        let archive = brarchive::serialize_with(&files, SerializeOptions { dedup })
             .unwrap_or_else(|err| { error!("Failed to encode: {}", err); exit(1); });
 
         fs::write(&archive_path, &archive).unwrap_or_else(|err| {
@@ -240,6 +252,14 @@ fn decode_recursive(archive_root: &Path, current: &Path, out_root: &Path, delete
         } else if p.is_file() && p.extension().and_then(OsStr::to_str) == Some("brarchive") {
             let relative = p.strip_prefix(archive_root).unwrap_or(&p);
             let out_dir = out_root.join(relative.with_extension(""));
+            if out_dir.starts_with(archive_root) {
+                error!(
+                    "Skipping \"{}\": output path \"{}\" would collide with archive root",
+                    p.display(),
+                    out_dir.display()
+                );
+                continue;
+            }
             decode_single(&p, &out_dir, delete_source);
         }
     }
