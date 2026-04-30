@@ -2,68 +2,49 @@
 
 [![Crates.io Version](https://img.shields.io/crates/v/brarchive)](https://crates.io/crates/brarchive)
 [![Crates.io Total Downloads](https://img.shields.io/crates/d/brarchive)](https://crates.io/crates/brarchive)
-[![Crates.io License](https://img.shields.io/crates/l/brarchive)](https://github.com/theaddonn/brarchive/blob/main/LICENSE)
+[![Crates.io License](https://img.shields.io/crates/l/brarchive)](https://github.com/theaddonn/brarchive-rs/blob/main/LICENSE)
 
-Library for Bedrock Archives in Rust
+Library and CLI for the Bedrock Archive (`.brarchive`) format — Mojang's bundling format for
+UTF-8 text files in Minecraft Bedrock Edition resource and behavior packs.
 
-So Mojang decided we don't have enough archive formats already and now invented their own for some reason, the `.brarchive` format.
+See [FORMAT.md](FORMAT.md) for the binary format specification.
 
-It is basically nothing more than a simple uncompressed text archive format to bundle multiple files into one.
-Which helps improve compression, and hopefully in the future allows for chunk based deduplication
-
-This library implements the format and includes a CLI to encode and decode directories/archives.
-
-## Library Usage Examples
-
-One can easily decode/deserialize archives using the library:
+## Library Usage
 
 ```rust
-fn main() {
-    let bytes = include_bytes!("your_archive.brarchive");
-    
-    let archive = brarchive::deserialize(&bytes).unwrap();
+// Deserialize — collect into any type that implements FromIterator<(String, String)>
+let map: std::collections::BTreeMap<_, _> = brarchive::deserialize(&bytes)?;
+let vec: Vec<(String, String)>            = brarchive::deserialize(&bytes)?;
 
-    println!("{:#?}", archive);
-}
+// Serialize — accepts any iterable of string-like pairs
+brarchive::serialize([("entity.json", r#"{"id":"zombie"}"#)])?;
+brarchive::serialize(&btree_map)?;
+
+// Serialize with options (e.g. dedup identical content)
+brarchive::serialize_with(&map, brarchive::SerializeOptions { dedup: true })?;
 ```
 
-One can also easily encode/serialize archives using the library:
-
-```rust
-use std::collections::BTreeMap;
-
-fn main() {
-    // You can use any data-structure such as HashMap, BTreeMap, Vec
-    // Anything that implements IntoIterator<Item = (String, String)>
-    let archive = BTreeMap::from([
-        ("entry_name".to_string(), "entry_content".to_string())
-    ]);
-
-    let bytes = brarchive::serialize(&archive).unwrap();
-
-    println!("{:?}", bytes);
-}
-```
-
-## CLI Usage Examples
-
-The integrated [brarchive-cli](https://crates.io/crates/brarchive-cli) allows you
-to easily encode and decode archives with the command line. 
-
-How to encode a folder:
+## CLI Usage
 
 ```shell
-brarchive-cli encode "path/to/input/folder" "path/to/output/file"
-```
+# Encode a directory into a single archive
+brarchive-cli encode path/to/dir output.brarchive
 
-How to decode an archive:
+# Encode recursively (mirrors directory tree under __brarchive/)
+brarchive-cli encode path/to/pack --recursive
 
-```shell
-brarchive-cli decode "path/to/input/file" "path/to/output/folder
-```
+# Encode with content deduplication
+brarchive-cli encode path/to/dir output.brarchive --dedup
 
-You can also get help via the help command:
+# Delete source files after encoding
+brarchive-cli encode path/to/dir output.brarchive --delete-source
 
-```shell
-brarchive-cli help
+# Decode a single archive
+brarchive-cli decode output.brarchive path/to/out/
+
+# Decode all archives under __brarchive/ recursively
+brarchive-cli decode path/to/pack --recursive
+
+# Delete archive after decoding
+brarchive-cli decode output.brarchive path/to/out/ --delete-source
 ```
