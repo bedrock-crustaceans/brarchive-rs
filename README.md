@@ -9,6 +9,7 @@ Library for Bedrock Archives in Rust
 So Mojang decided we don't have enough archive formats already and now invented their own for some reason, the `.brarchive` format.
 
 It is basically nothing more than a simple uncompressed text archive format to bundle multiple files into one.
+Which helps improve compression, and hopefully in the future allows for chunk based deduplication
 
 This library implements the format and includes a CLI to encode and decode directories/archives.
 
