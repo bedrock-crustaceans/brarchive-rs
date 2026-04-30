@@ -51,7 +51,7 @@ for content deduplication.
 
 ## Constraints
 
-- Entry name: 1–247 UTF-8 bytes. Names are not required to be unique by the format, but
+- Entry name: 0–247 UTF-8 bytes. Names are not required to be unique by the format, but
   deserializers building maps will keep only the last value for duplicate names.
 - Content: must be valid UTF-8 in all known Mojang usage.
 - `content_len = 0` is valid (manifest stubs).
