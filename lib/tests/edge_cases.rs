@@ -66,6 +66,43 @@ fn dedup_produces_smaller_output_for_identical_values() {
     assert!(with_dedup.len() < without.len());
 }
 
+// --- Error-path tests ---
+
+#[test]
+fn deserialize_bad_magic_returns_error() {
+    let mut bytes = brarchive::serialize([("k", "v")]).unwrap();
+    bytes[0] ^= 0xFF;
+    let result: Result<BTreeMap<String, String>, _> = brarchive::deserialize(&bytes);
+    assert!(matches!(result, Err(brarchive::error::BrArchiveError::MagicMismatch(_))));
+}
+
+#[test]
+fn deserialize_bad_version_returns_error() {
+    let mut bytes = brarchive::serialize([("k", "v")]).unwrap();
+    // Version is at bytes 12-15 (u32 LE). Set it to 999.
+    bytes[12] = 0xE7;
+    bytes[13] = 0x03;
+    bytes[14] = 0x00;
+    bytes[15] = 0x00;
+    let result: Result<BTreeMap<String, String>, _> = brarchive::deserialize(&bytes);
+    assert!(matches!(result, Err(brarchive::error::BrArchiveError::UnsupportedVersion(999))));
+}
+
+#[test]
+fn serialize_name_too_long_returns_error() {
+    let long_name = "a".repeat(248);
+    let result = brarchive::serialize([(long_name.as_str(), "v")]);
+    assert!(matches!(result, Err(brarchive::error::BrArchiveError::EntryNameTooLong(_))));
+}
+
+#[test]
+fn serialize_name_at_max_length_succeeds() {
+    let max_name = "a".repeat(247);
+    let bytes = brarchive::serialize([(max_name.as_str(), "v")]).unwrap();
+    let result: BTreeMap<String, String> = brarchive::deserialize(&bytes).unwrap();
+    assert_eq!(result[&max_name], "v");
+}
+
 // --- Fixture-based tests ---
 
 /// ddui.brarchive is 16 bytes — an empty archive (0 entries).
@@ -105,45 +142,50 @@ fn fixture_textures_has_two_entries() {
     assert!(result.contains_key("texture_list.json"));
 }
 
-/// Remaining real-world fixtures should all deserialize without error.
 #[test]
 fn fixture_animation_controllers_deserializes() {
     let bytes = include_bytes!("fixtures/animation_controllers.brarchive");
     let result: BTreeMap<String, String> = brarchive::deserialize(bytes).unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 4);
+    assert!(result.contains_key("humanoid.animation_controllers.json"));
 }
 
 #[test]
 fn fixture_animations_deserializes() {
     let bytes = include_bytes!("fixtures/animations.brarchive");
     let result: BTreeMap<String, String> = brarchive::deserialize(bytes).unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 5);
+    assert!(result.contains_key("humanoid.animation.json"));
 }
 
 #[test]
 fn fixture_attachables_deserializes() {
     let bytes = include_bytes!("fixtures/attachables.brarchive");
     let result: BTreeMap<String, String> = brarchive::deserialize(bytes).unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 7);
+    assert!(result.contains_key("copper_spear.entity.json"));
 }
 
 #[test]
 fn fixture_entity_deserializes() {
     let bytes = include_bytes!("fixtures/entity.brarchive");
     let result: BTreeMap<String, String> = brarchive::deserialize(bytes).unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 13);
+    assert!(result.contains_key("camel_husk.entity.json"));
 }
 
 #[test]
 fn fixture_particles_deserializes() {
     let bytes = include_bytes!("fixtures/particles.brarchive");
     let result: BTreeMap<String, String> = brarchive::deserialize(bytes).unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 1);
+    assert!(result.contains_key("nautilus_bubbles.json"));
 }
 
 #[test]
 fn fixture_render_controllers_deserializes() {
     let bytes = include_bytes!("fixtures/render_controllers.brarchive");
     let result: BTreeMap<String, String> = brarchive::deserialize(bytes).unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 4);
+    assert!(result.contains_key("horse_v3.render_controllers.json"));
 }
