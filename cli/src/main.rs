@@ -1,7 +1,8 @@
+use brarchive::SerializeOptions;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::time::Instant;
 use clap::Parser;
@@ -14,177 +15,238 @@ mod logger;
 
 fn main() {
     let args = CliArgs::parse();
-
     setup_logger(args.log_path);
 
     match args.command {
-        CliSubcommand::Encode { path, out } => {
+        CliSubcommand::Encode { path, out, recursive, dedup, delete_source } => {
             let start_time = Instant::now();
 
-            let out = out.unwrap_or(extract_file_name(&path).unwrap_or(PathBuf::from("brarchive")));
-            let out = add_extension_if_missing(out, "brarchive");
-
-            info!("Beginning to encode \"{}\" into \"{}\" archive", &path.display(), out.display());
-
-            let exists = fs::exists(&out).unwrap_or_else(|err| {
-                error!("Failed to check if output directory exists \"{}\": {}", path.display(), err);
-                exit(1);
-            });
-
-            if exists && !out.is_dir() {
-                error!("Output directory \"{}\" already exists", out.display());
-                exit(1);
-            }
-
-            if exists && !out.is_file() {
-                error!("Output file \"{}\" already exists", out.display());
-                exit(1);
-            }
-
-            let exists = fs::exists(&path).unwrap_or_else(|err| {
-                error!("Failed to check if input directory exists \"{}\": {}", path.display(), err);
-                exit(1);
-            });
-
-            if !exists {
-                error!("Input directory \"{}\" does not exist", path.display());
-                exit(1);
-            }
-
-            let entries_map = if path.is_dir() {
-                let read_dir = fs::read_dir(&path).unwrap_or_else(|err| {
-                    error!("Failed to read directory \"{}\": {}", path.display(), &err);
-                    exit(1);
-                });
-
-                let mut dir_entries = BTreeMap::new();
-
-                for entry in read_dir {
-                    let entry = entry.unwrap_or_else(|err| {
-                        error!("Failed to read directory entry of \"{}\": {}", path.display(), err);
-                        exit(1);
-                    });
-
-                    let content = fs::read_to_string(entry.path()).unwrap_or_else(|err| {
-                        error!("Failed to read file \"{}\": {}", entry.path().display(), err);
-                        exit(1);
-                    });
-
-                    let entry_name = entry.path();
-                    let entry_name = entry_name.strip_prefix(&path).unwrap_or_else(|err| {
-                        error!("Failed to strip prefix from \"{}\": {}", entry.path().display(), err);
-                        exit(1);
-                    });
-                    let entry_name = entry_name.to_str().unwrap_or_else(|| {
-                        error!("Failed to convert file path to UTF-8: {}", entry.path().display());
-                        exit(1);
-                    });
-
-                    dir_entries.insert(entry_name.to_string(), content);
-                }
-
-                dir_entries
-            } else if path.is_file() {
-                let content = fs::read_to_string(&path).unwrap_or_else(|err| {
-                    error!("Failed to read file \"{}\": {}", path.display(), &err);
-                    exit(1);
-                });
-
-                let entry_name = path.file_name().and_then(OsStr::to_str).unwrap_or_else(|| {
-                    error!("Failed to convert file path to UTF-8: {}", path.display());
-                    exit(1);
-                }).to_string();
-
-                BTreeMap::from([(entry_name, content)])
+            if recursive {
+                let out_base = out.unwrap_or_else(|| path.clone());
+                let archive_root = out_base.join("__brarchive");
+                encode_recursive(&path, &path, &archive_root, dedup, delete_source);
+                info!("Successfully encoded recursively in {}!", humantime::format_duration(start_time.elapsed()));
             } else {
-                error!("Input Path is neither a file nor a folder \"{}\"", path.display());
-                exit(1);
-            };
-
-            let archive = brarchive::serialize(entries_map).unwrap_or_else(|err| {
-                error!("Failed to encode directory entries \"{}\": {}", err, path.display());
-                exit(1);
-            });
-
-            fs::write(&out, &archive).unwrap_or_else(|err| {
-                error!("Failed to write archive \"{}\": {}", out.display(), err);
-            });
-
-            info!("Successfully encoded archive in {}!", humantime::format_duration(start_time.elapsed()));
+                let out = out.unwrap_or_else(|| extract_file_name(&path)
+                    .unwrap_or(PathBuf::from("brarchive")));
+                let out = add_extension_if_missing(out, "brarchive");
+                encode_single(&path, &out, dedup, delete_source);
+                info!("Successfully encoded archive in {}!", humantime::format_duration(start_time.elapsed()));
+            }
         }
-        CliSubcommand::Decode { path, out } => {
+        CliSubcommand::Decode { path, out, recursive, delete_source } => {
             let start_time = Instant::now();
 
-            let out = out.unwrap_or(extract_file_name(&path).unwrap_or(PathBuf::from("brarchive")));
-
-            info!("Beginning to decode archive \"{}\" into \"{}\"", path.display(), out.display());
-
-            let exists = fs::exists(&path).unwrap_or_else(|err| {
-                error!("Failed to check if input file exists \"{}\": {}", path.display(), err);
-                exit(1);
-            });
-
-            if !exists {
-                error!("Input file \"{}\" does not exist", path.display());
-                exit(1);
-            }
-
-            let data = fs::read(&path).unwrap_or_else(|err| {
-                error!("Failed to read archive file \"{}\": {}", path.display(), err);
-                exit(1);
-            });
-
-            let archive: BTreeMap<String, String> = brarchive::deserialize(&data).unwrap_or_else(|err| {
-                error!("Failed to decode archive file \"{}\": {}", path.display(), err);
-                exit(1);
-            });
-
-            let exists = fs::exists(&out).unwrap_or_else(|err| {
-                error!("Failed to check if output directory exists \"{}\": {}", out.display(), err);
-                exit(1);
-            });
-
-            if exists && !out.is_dir() {
-                error!("Output directory \"{}\" already exists and is not a directory", out.display());
-                exit(1);
-            }
-
-            let directory_contents = fs::read_dir(&out).ok();
-
-            if let Some(contents) = directory_contents {
-                if contents.count() > 0 || exists {
-                    error!("Output directory \"{}\" already exists and is not empty", out.display());
+            if recursive {
+                let archive_root = path.join("__brarchive");
+                if !archive_root.exists() {
+                    error!("No __brarchive/ directory found in \"{}\"", path.display());
                     exit(1);
                 }
+                let out_base = out.unwrap_or_else(|| path.clone());
+                decode_recursive(&archive_root, &archive_root, &out_base, delete_source);
+                info!("Successfully decoded recursively in {}!", humantime::format_duration(start_time.elapsed()));
+            } else {
+                let out = out.unwrap_or_else(|| extract_file_name(&path)
+                    .unwrap_or(PathBuf::from("brarchive")));
+                decode_single(&path, &out, delete_source);
+                info!("Successfully decoded archive in {}!", humantime::format_duration(start_time.elapsed()));
             }
-
-            if !exists {
-                fs::create_dir(&out).unwrap_or_else(|err| {
-                    error!("Failed to create output directory \"{}\": {}", out.display(), err);
-                    exit(1);
-                });
-
-                info!("Successfully created output directory \"{}\"", out.display());
-            }
-
-            for (file, contents) in archive {
-                fs::write(out.join(&file), contents).unwrap_or_else(|err| {
-                    error!("Failed to write output file \"{}\": {}", out.display(), err);
-                });
-
-                info!("Successfully decoded {:?}", &file);
-            }
-
-            info!("Successfully decoded archive in {}!", humantime::format_duration(start_time.elapsed()));
         }
     }
 }
 
+fn encode_single(path: &Path, out: &Path, dedup: bool, delete_source: bool) {
+    if !path.exists() {
+        error!("Input \"{}\" does not exist", path.display());
+        exit(1);
+    }
+    if out.exists() {
+        error!("Output \"{}\" already exists", out.display());
+        exit(1);
+    }
 
-fn extract_file_name(path: &PathBuf) -> Option<PathBuf> {
-    path.file_stem()
-        .and_then(OsStr::to_str) // Convert OsStr to &str
-        .map(PathBuf::from) // Convert &str to PathBuf
+    let entries_map: BTreeMap<String, String> = if path.is_dir() {
+        let read_dir = fs::read_dir(path).unwrap_or_else(|err| {
+            error!("Failed to read directory \"{}\": {}", path.display(), err);
+            exit(1);
+        });
+        let mut map = BTreeMap::new();
+        for entry in read_dir {
+            let entry = entry.unwrap_or_else(|err| { error!("{}", err); exit(1); });
+            if !entry.path().is_file() { continue; }
+            let content = fs::read_to_string(entry.path()).unwrap_or_else(|err| {
+                error!("Failed to read \"{}\": {}", entry.path().display(), err);
+                exit(1);
+            });
+            let name = entry.path().strip_prefix(path).unwrap()
+                .to_str().unwrap().to_string();
+            map.insert(name, content);
+        }
+        map
+    } else {
+        let content = fs::read_to_string(path).unwrap_or_else(|err| {
+            error!("Failed to read \"{}\": {}", path.display(), err);
+            exit(1);
+        });
+        let name = path.file_name().and_then(OsStr::to_str).unwrap().to_string();
+        BTreeMap::from([(name, content)])
+    };
+
+    let archive = brarchive::serialize_with(entries_map, SerializeOptions { dedup })
+        .unwrap_or_else(|err| { error!("Failed to encode: {}", err); exit(1); });
+
+    fs::write(out, &archive).unwrap_or_else(|err| {
+        error!("Failed to write \"{}\": {}", out.display(), err);
+        exit(1);
+    });
+
+    if delete_source {
+        if path.is_dir() {
+            fs::remove_dir_all(path).unwrap_or_else(|err| {
+                error!("Failed to delete source \"{}\": {}", path.display(), err);
+            });
+        } else {
+            fs::remove_file(path).unwrap_or_else(|err| {
+                error!("Failed to delete source \"{}\": {}", path.display(), err);
+            });
+        }
+    }
+}
+
+fn encode_recursive(source_root: &Path, current: &Path, archive_root: &Path, dedup: bool, delete_source: bool) {
+    let read_dir = fs::read_dir(current).unwrap_or_else(|err| {
+        error!("Failed to read \"{}\": {}", current.display(), err);
+        exit(1);
+    });
+
+    let mut subdirs = Vec::new();
+    let mut files: BTreeMap<String, String> = BTreeMap::new();
+
+    for entry in read_dir {
+        let entry = entry.unwrap_or_else(|err| { error!("{}", err); exit(1); });
+        let p = entry.path();
+        if p.is_dir() {
+            if p.file_name().and_then(OsStr::to_str) != Some("__brarchive") {
+                subdirs.push(p);
+            }
+        } else if p.is_file() {
+            let content = match fs::read_to_string(&p) {
+                Ok(c) => c,
+                Err(_) => continue, // skip non-UTF-8 files silently
+            };
+            let name = p.file_name().and_then(OsStr::to_str).unwrap().to_string();
+            files.insert(name, content);
+        }
+    }
+
+    if !files.is_empty() {
+        let relative = current.strip_prefix(source_root).unwrap_or(Path::new(""));
+        let archive_path = add_extension_if_missing(archive_root.join(relative), "brarchive");
+
+        if let Some(parent) = archive_path.parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|err| {
+                error!("Failed to create directory: {}", err);
+                exit(1);
+            });
+        }
+
+        let archive = brarchive::serialize_with(files.clone(), SerializeOptions { dedup })
+            .unwrap_or_else(|err| { error!("Failed to encode: {}", err); exit(1); });
+
+        fs::write(&archive_path, &archive).unwrap_or_else(|err| {
+            error!("Failed to write \"{}\": {}", archive_path.display(), err);
+            exit(1);
+        });
+
+        info!("Encoded \"{}\"", archive_path.display());
+
+        if delete_source {
+            for name in files.keys() {
+                let file_path = current.join(name);
+                fs::remove_file(&file_path).unwrap_or_else(|err| {
+                    error!("Failed to delete \"{}\": {}", file_path.display(), err);
+                });
+            }
+        }
+    }
+
+    for subdir in subdirs {
+        encode_recursive(source_root, &subdir, archive_root, dedup, delete_source);
+    }
+}
+
+fn decode_single(path: &Path, out: &Path, delete_source: bool) {
+    if !path.exists() {
+        error!("Input \"{}\" does not exist", path.display());
+        exit(1);
+    }
+
+    let data = fs::read(path).unwrap_or_else(|err| {
+        error!("Failed to read \"{}\": {}", path.display(), err);
+        exit(1);
+    });
+
+    let archive: BTreeMap<String, String> = brarchive::deserialize(&data).unwrap_or_else(|err| {
+        error!("Failed to decode \"{}\": {}", path.display(), err);
+        exit(1);
+    });
+
+    if out.exists() && out.is_dir() {
+        if fs::read_dir(out).map(|mut d| d.next().is_some()).unwrap_or(false) {
+            error!("Output directory \"{}\" is not empty", out.display());
+            exit(1);
+        }
+    } else if !out.exists() {
+        fs::create_dir_all(out).unwrap_or_else(|err| {
+            error!("Failed to create output directory: {}", err);
+            exit(1);
+        });
+    }
+
+    for (file, contents) in archive {
+        let dest = out.join(&file);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|err| {
+                error!("Failed to create directories: {}", err);
+                exit(1);
+            });
+        }
+        fs::write(&dest, contents).unwrap_or_else(|err| {
+            error!("Failed to write \"{}\": {}", dest.display(), err);
+        });
+        info!("Decoded {:?}", file);
+    }
+
+    if delete_source {
+        fs::remove_file(path).unwrap_or_else(|err| {
+            error!("Failed to delete source \"{}\": {}", path.display(), err);
+        });
+    }
+}
+
+fn decode_recursive(archive_root: &Path, current: &Path, out_root: &Path, delete_source: bool) {
+    let read_dir = fs::read_dir(current).unwrap_or_else(|err| {
+        error!("Failed to read \"{}\": {}", current.display(), err);
+        exit(1);
+    });
+
+    for entry in read_dir {
+        let entry = entry.unwrap_or_else(|err| { error!("{}", err); exit(1); });
+        let p = entry.path();
+
+        if p.is_dir() {
+            decode_recursive(archive_root, &p, out_root, delete_source);
+        } else if p.is_file() && p.extension().and_then(OsStr::to_str) == Some("brarchive") {
+            let relative = p.strip_prefix(archive_root).unwrap_or(&p);
+            let out_dir = out_root.join(relative.with_extension(""));
+            decode_single(&p, &out_dir, delete_source);
+        }
+    }
+}
+
+fn extract_file_name(path: &Path) -> Option<PathBuf> {
+    path.file_stem().and_then(OsStr::to_str).map(PathBuf::from)
 }
 
 fn add_extension_if_missing(mut path: PathBuf, extension: &str) -> PathBuf {
