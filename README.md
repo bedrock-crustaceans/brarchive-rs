@@ -2,6 +2,7 @@
 
 [![Crates.io Version](https://img.shields.io/crates/v/brarchive)](https://crates.io/crates/brarchive)
 [![Crates.io Total Downloads](https://img.shields.io/crates/d/brarchive)](https://crates.io/crates/brarchive)
+![Crates.io MSRV (version)](https://img.shields.io/crates/msrv/brarchive/0.2.1)
 [![Crates.io License](https://img.shields.io/crates/l/brarchive)](https://github.com/theaddonn/brarchive-rs/blob/main/LICENSE)
 
 Library and CLI for the Bedrock Archive (`.brarchive`) format- Mojang's bundling format for
