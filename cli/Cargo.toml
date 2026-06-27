@@ -13,7 +13,7 @@ categories = ["data-structures", "parser-implementations", "command-line-utiliti
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-brarchive = { path = "../lib", version = "0.2.0" }
+brarchive = { path = "../lib", version = "0.2.1" }
 log = "0.4"
 fern = { version = "0.7", features = ["colored"] }
 chrono = "0.4"
