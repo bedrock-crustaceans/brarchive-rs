@@ -2,9 +2,14 @@ use std::collections::BTreeMap;
 
 #[test]
 fn brarchive_recipe() {
-    let archive_result = brarchive::deserialize(include_bytes!("recipes.brarchive"));
+    let archive_result: BTreeMap<String, Vec<u8>> =
+        brarchive::deserialize(include_bytes!("recipes.brarchive")).unwrap();
+    let archive_result: BTreeMap<String, String> = archive_result
+        .into_iter()
+        .map(|(k, v)| (k, String::from_utf8(v).unwrap()))
+        .collect();
 
-    let archive_correct = Ok(BTreeMap::from([(
+    let archive_correct = BTreeMap::from([(
         "acacia_boat.json".to_string(),
         r####"{"format_version":"1.20.10","minecraft:recipe_shaped":{"description":{"identifier":"minecraft:acacia_boat"},"tags":["crafting_table"],"pattern":["# #","###"],"key":{"#":{"item":"minecraft:acacia_planks"}},"unlock":{"context":"PlayerInWater"},"result":{"item":"minecraft:acacia_boat"}}}"####.to_string()
     ), (
@@ -341,7 +346,7 @@ fn brarchive_recipe() {
         "wooden_door.json".to_string(),
         r####"{"format_version":"1.20.10","minecraft:recipe_shaped":{"description":{"identifier":"minecraft:wooden_door"},"tags":["crafting_table"],"group":"wooden_door","pattern":["##","##","##"],"key":{"#":{"item":"minecraft:oak_planks"}},"unlock":[{"item":"minecraft:oak_planks"}],"result":{"item":"minecraft:wooden_door","count":3}}}"####.to_string()
     ),
-    ]));
+    ]);
 
     assert_eq!(archive_result, archive_correct);
 }

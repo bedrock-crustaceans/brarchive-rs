@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 #[test]
 fn deserialize_into_hashmap() {
     let bytes = brarchive::serialize([("a.json".to_string(), "{}".to_string())]).unwrap();
-    let map: HashMap<String, String> = brarchive::deserialize(&bytes).unwrap();
-    assert_eq!(map["a.json"], "{}");
+    let map: HashMap<String, Vec<u8>> = brarchive::deserialize(&bytes).unwrap();
+    assert_eq!(map["a.json"], b"{}");
 }
 
 #[test]
@@ -15,25 +15,35 @@ fn deserialize_into_vec() {
         ("b.json".to_string(), "2".to_string()),
     ])
     .unwrap();
-    let vec: Vec<(String, String)> = brarchive::deserialize(&bytes).unwrap();
+    let vec: Vec<(String, Vec<u8>)> = brarchive::deserialize(&bytes).unwrap();
     assert_eq!(vec.len(), 2);
-    assert_eq!(vec[0], ("a.json".to_string(), "1".to_string()));
-    assert_eq!(vec[1], ("b.json".to_string(), "2".to_string()));
+    assert_eq!(vec[0], ("a.json".to_string(), b"1".to_vec()));
+    assert_eq!(vec[1], ("b.json".to_string(), b"2".to_vec()));
 }
 
 #[test]
 fn serialize_str_literals() {
     let bytes = brarchive::serialize([("hello.json", "{}")]).unwrap();
-    let map: BTreeMap<String, String> = brarchive::deserialize(&bytes).unwrap();
-    assert_eq!(map["hello.json"], "{}");
+    let map: BTreeMap<String, Vec<u8>> = brarchive::deserialize(&bytes).unwrap();
+    assert_eq!(map["hello.json"], b"{}");
+}
+
+#[test]
+fn serialize_binary_content_round_trip() {
+    // Content need not be valid UTF-8: binary bytes (e.g. compiled MCB entries)
+    // must survive a round trip byte-for-byte.
+    let mcb = vec![0x7Fu8, b'M', b'C', b'B', 0x01, 0x00, 0xD2, 0x20, 0xDE, 0x77];
+    let bytes = brarchive::serialize([("death.json", mcb.as_slice())]).unwrap();
+    let map: BTreeMap<String, Vec<u8>> = brarchive::deserialize(&bytes).unwrap();
+    assert_eq!(map["death.json"], mcb);
 }
 
 #[test]
 fn serialize_btreemap_ref() {
     let map = BTreeMap::from([("x.json".to_string(), "data".to_string())]);
     let bytes = brarchive::serialize(&map).unwrap();
-    let result: BTreeMap<String, String> = brarchive::deserialize(&bytes).unwrap();
-    assert_eq!(result, map);
+    let result: BTreeMap<String, Vec<u8>> = brarchive::deserialize(&bytes).unwrap();
+    assert_eq!(result["x.json"], b"data");
 }
 
 #[test]
@@ -55,10 +65,10 @@ fn serialize_with_dedup_round_trip() {
         ("c.json".to_string(), "unique".to_string()),
     ];
     let bytes = brarchive::serialize_with(data, SerializeOptions { dedup: true }).unwrap();
-    let result: BTreeMap<String, String> = brarchive::deserialize(&bytes).unwrap();
-    assert_eq!(result["a.json"], "shared");
-    assert_eq!(result["b.json"], "shared");
-    assert_eq!(result["c.json"], "unique");
+    let result: BTreeMap<String, Vec<u8>> = brarchive::deserialize(&bytes).unwrap();
+    assert_eq!(result["a.json"], b"shared");
+    assert_eq!(result["b.json"], b"shared");
+    assert_eq!(result["c.json"], b"unique");
 }
 
 #[test]
@@ -93,7 +103,7 @@ fn list_does_not_require_reading_content() {
     ];
     let bytes = brarchive::serialize(data).unwrap();
     let names = brarchive::list(&bytes).unwrap();
-    let map: std::collections::BTreeMap<String, String> = brarchive::deserialize(&bytes).unwrap();
+    let map: std::collections::BTreeMap<String, Vec<u8>> = brarchive::deserialize(&bytes).unwrap();
     let map_keys: Vec<&str> = map.keys().map(String::as_str).collect();
     assert_eq!(names, map_keys);
 }

@@ -33,10 +33,14 @@ pub fn list(data: &[u8]) -> Result<JsValue, JsError> {
     serde_wasm_bindgen::to_value(&names).map_err(|e| JsError::new(&e.to_string()))
 }
 
-/// Deserialize .brarchive bytes into a plain JS object `{ [key: string]: string }`.
+/// Deserialize .brarchive bytes into a plain JS object `{ [key: string]: number[] }`.
+///
+/// Entry content is returned as byte arrays because archives may contain binary
+/// entries (e.g. Mojang's compiled `MCB` files). Decode to text on the JS side
+/// with `new TextDecoder().decode(new Uint8Array(bytes))` when appropriate.
 #[wasm_bindgen]
 pub fn deserialize(data: &[u8]) -> Result<JsValue, JsError> {
-    let map: BTreeMap<String, String> =
+    let map: BTreeMap<String, Vec<u8>> =
         brarchive::deserialize(data).map_err(|e| JsError::new(&e.to_string()))?;
     serde_wasm_bindgen::to_value(&map).map_err(|e| JsError::new(&e.to_string()))
 }

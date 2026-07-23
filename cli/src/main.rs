@@ -103,7 +103,7 @@ fn encode_single(path: &Path, out: &Path, dedup: bool, delete_source: bool) {
         exit(1);
     }
 
-    let entries_map: BTreeMap<String, String> = if path.is_dir() {
+    let entries_map: BTreeMap<String, Vec<u8>> = if path.is_dir() {
         let read_dir = fs::read_dir(path).unwrap_or_else(|err| {
             error!("Failed to read directory \"{}\": {}", path.display(), err);
             exit(1);
@@ -117,7 +117,7 @@ fn encode_single(path: &Path, out: &Path, dedup: bool, delete_source: bool) {
             if !entry.path().is_file() {
                 continue;
             }
-            let content = fs::read_to_string(entry.path()).unwrap_or_else(|err| {
+            let content = fs::read(entry.path()).unwrap_or_else(|err| {
                 error!("Failed to read \"{}\": {}", entry.path().display(), err);
                 exit(1);
             });
@@ -132,7 +132,7 @@ fn encode_single(path: &Path, out: &Path, dedup: bool, delete_source: bool) {
         }
         map
     } else {
-        let content = fs::read_to_string(path).unwrap_or_else(|err| {
+        let content = fs::read(path).unwrap_or_else(|err| {
             error!("Failed to read \"{}\": {}", path.display(), err);
             exit(1);
         });
@@ -181,7 +181,7 @@ fn encode_recursive(
     });
 
     let mut subdirs = Vec::new();
-    let mut files: BTreeMap<String, String> = BTreeMap::new();
+    let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
     for entry in read_dir {
         let entry = entry.unwrap_or_else(|err| {
@@ -194,10 +194,10 @@ fn encode_recursive(
                 subdirs.push(p);
             }
         } else if p.is_file() {
-            let content = match fs::read_to_string(&p) {
+            let content = match fs::read(&p) {
                 Ok(c) => c,
                 Err(err) => {
-                    warn!("Skipping non-UTF-8 file \"{}\": {}", p.display(), err);
+                    warn!("Skipping unreadable file \"{}\": {}", p.display(), err);
                     continue;
                 }
             };
@@ -265,7 +265,7 @@ fn decode_single(path: &Path, out: &Path, delete_source: bool) {
         exit(1);
     });
 
-    let archive: BTreeMap<String, String> = brarchive::deserialize(&data).unwrap_or_else(|err| {
+    let archive: BTreeMap<String, Vec<u8>> = brarchive::deserialize(&data).unwrap_or_else(|err| {
         error!("Failed to decode \"{}\": {}", path.display(), err);
         exit(1);
     });

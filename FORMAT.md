@@ -53,7 +53,10 @@ for content deduplication.
 
 - Entry name: 0–247 UTF-8 bytes. Names are not required to be unique by the format, but
   deserializers building maps will keep only the last value for duplicate names.
-- Content: must be valid UTF-8 in all known Mojang usage.
+- Content: arbitrary bytes. Historically UTF-8 text (JSON), but recent Mojang packs
+  also embed binary entries — notably compiled `MCB` blobs (magic `7F 4D 43 42`,
+  i.e. `\x7F` + `"MCB"`) for particles, cameras, trades, and shapes. Deserializers
+  must not assume UTF-8.
 - `content_len = 0` is valid (manifest stubs).
 
 ## Version History

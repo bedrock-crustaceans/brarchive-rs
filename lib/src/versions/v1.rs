@@ -38,11 +38,11 @@ pub(crate) fn read_entry_descriptor<'a>(
 pub(crate) fn read_entry_contents(
     buf: &mut Cursor<&[u8]>,
     entry: &EntryDescriptor,
-) -> Result<String, BrArchiveError> {
+) -> Result<Vec<u8>, BrArchiveError> {
     let start_offset = buf.stream_position()?;
     buf.set_position(start_offset + entry.contents_offset as u64);
     let mut contents = vec![0u8; entry.contents_len as usize];
     buf.read_exact(&mut contents)?;
     buf.set_position(start_offset);
-    Ok(String::from_utf8(contents).map_err(|e| e.utf8_error())?)
+    Ok(contents)
 }
