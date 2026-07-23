@@ -64,6 +64,7 @@ fn main() {
             out,
             recursive,
             delete_source,
+            pretty,
         } => {
             let start_time = Instant::now();
 
@@ -74,7 +75,13 @@ fn main() {
                     exit(1);
                 }
                 let out_base = out.unwrap_or_else(|| path.clone());
-                decode_recursive(&archive_root, &archive_root, &out_base, delete_source);
+                decode_recursive(
+                    &archive_root,
+                    &archive_root,
+                    &out_base,
+                    delete_source,
+                    pretty,
+                );
                 info!(
                     "Successfully decoded recursively in {}!",
                     humantime::format_duration(start_time.elapsed())
@@ -83,7 +90,7 @@ fn main() {
                 let out = out.unwrap_or_else(|| {
                     extract_file_name(&path).unwrap_or(PathBuf::from("brarchive"))
                 });
-                decode_single(&path, &out, delete_source);
+                decode_single(&path, &out, delete_source, pretty);
                 info!(
                     "Successfully decoded archive in {}!",
                     humantime::format_duration(start_time.elapsed())
@@ -254,7 +261,7 @@ fn encode_recursive(
     }
 }
 
-fn decode_single(path: &Path, out: &Path, delete_source: bool) {
+fn decode_single(path: &Path, out: &Path, delete_source: bool, pretty: bool) {
     if !path.exists() {
         error!("Input \"{}\" does not exist", path.display());
         exit(1);
@@ -293,6 +300,11 @@ fn decode_single(path: &Path, out: &Path, delete_source: bool) {
                 exit(1);
             });
         }
+        let contents = if pretty {
+            prettify_json(contents)
+        } else {
+            contents
+        };
         fs::write(&dest, contents).unwrap_or_else(|err| {
             error!("Failed to write \"{}\": {}", dest.display(), err);
         });
@@ -306,7 +318,23 @@ fn decode_single(path: &Path, out: &Path, delete_source: bool) {
     }
 }
 
-fn decode_recursive(archive_root: &Path, current: &Path, out_root: &Path, delete_source: bool) {
+/// Pretty-print `contents` if it parses as JSON (2-space indent, key order
+/// preserved); otherwise return it untouched so binary entries such as compiled
+/// MCB blobs stay byte-for-byte identical.
+fn prettify_json(contents: Vec<u8>) -> Vec<u8> {
+    match serde_json::from_slice::<serde_json::Value>(&contents) {
+        Ok(value) => serde_json::to_vec_pretty(&value).unwrap_or(contents),
+        Err(_) => contents,
+    }
+}
+
+fn decode_recursive(
+    archive_root: &Path,
+    current: &Path,
+    out_root: &Path,
+    delete_source: bool,
+    pretty: bool,
+) {
     let read_dir = fs::read_dir(current).unwrap_or_else(|err| {
         error!("Failed to read \"{}\": {}", current.display(), err);
         exit(1);
@@ -320,7 +348,7 @@ fn decode_recursive(archive_root: &Path, current: &Path, out_root: &Path, delete
         let p = entry.path();
 
         if p.is_dir() {
-            decode_recursive(archive_root, &p, out_root, delete_source);
+            decode_recursive(archive_root, &p, out_root, delete_source, pretty);
         } else if p.is_file() && p.extension().and_then(OsStr::to_str) == Some("brarchive") {
             let relative = p.strip_prefix(archive_root).unwrap_or(&p);
             let out_dir = out_root.join(relative.with_extension(""));
@@ -332,7 +360,7 @@ fn decode_recursive(archive_root: &Path, current: &Path, out_root: &Path, delete
                 );
                 continue;
             }
-            decode_single(&p, &out_dir, delete_source);
+            decode_single(&p, &out_dir, delete_source, pretty);
         }
     }
 }

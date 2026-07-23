@@ -43,6 +43,10 @@ pub enum CliSubcommand {
         /// Delete source archive(s) after successful decode
         #[arg(long)]
         delete_source: bool,
+        /// Pretty-print entries that parse as JSON (2-space indent); binary
+        /// entries such as compiled MCB blobs are written unchanged
+        #[arg(short, long)]
+        pretty: bool,
     },
     #[command(about = "List entry names in a .brarchive file")]
     List {
